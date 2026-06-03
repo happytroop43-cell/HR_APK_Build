@@ -20,13 +20,12 @@ jobs:
       with:
         fetch-depth: 1
 
-    # Step 2: Set Up Java Development Kit
+    # Step 2: Set Up Java Development Kit (Fixed: Removed Gradle cache scanner)
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
-        cache: 'gradle'
 
     # Step 3: Set Up Python Platform Environment
     - name: Set Up Python Platform Environment
@@ -161,7 +160,4 @@ jobs:
         echo "Build completed with status: ${{ job.status }}"
         if [ "${{ job.status }}" = "success" ]; then
           echo "✓ APK build successful"
-          ls -lh bin/*.apk 2>/dev/null || echo "No APK files found"
-        else
-          echo "✗ Build failed - check logs above"
         fi
