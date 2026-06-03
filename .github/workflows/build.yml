@@ -16,7 +16,12 @@ jobs:
     - name: Install System Architecture Tool Chains
       run: |
         sudo apt update
-        sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config
+        sudo apt install -y \
+          git zip unzip openjdk-17-jdk \
+          autoconf libtool pkg-config \
+          libffi-dev libssl-dev zlib1g-dev \
+          libjpeg-dev libpng-dev libfreetype6-dev \
+          ccache build-essential python3-dev
 
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
@@ -25,15 +30,26 @@ jobs:
 
     - name: Deploy Buildozer Engine Packages
       run: |
-        pip install --upgrade pip
+        pip install --upgrade pip setuptools wheel
         pip install buildozer cython virtualenv
 
     - name: Compile Application Layout into Standalone APK
       run: |
         yes y | buildozer -v android debug
+      env:
+        BUILDOZER_ACCEPT_SDK_LICENSE: 1
 
     - name: Export Output Package Artifact
       uses: actions/upload-artifact@v4
+      if: success()
       with:
         name: Compiled-HR-System-APK
         path: bin/*.apk
+        retention-days: 7
+
+    - name: Upload Build Logs on Failure
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: Build-Logs
+        path: .buildozer/android/platform/build-*/build.log
