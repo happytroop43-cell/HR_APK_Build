@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Cleans up runner annotation logs and forces Node 24 standard pipelines
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -17,23 +18,27 @@ jobs:
       actions: read
 
     steps:
+    # Step 1: Clone workspace source files
     - name: Checkout Source Code Files
       uses: actions/checkout@v4
       with:
         fetch-depth: 1
 
+    # Step 2: Establish Java Environment (Crucial for modern Android Gradle toolchains)
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
+    # Step 3: Align target Python runtime
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Install Complete Linux Toolchain & Build Essentials
+    # Step 4: Provision system core libraries and compilation prerequisites
+    - name: Install Complete System Dependencies
       run: |
         sudo apt-get update -qq
         sudo apt-get install -y \
@@ -66,12 +71,14 @@ jobs:
           ccache \
           gettext
 
+    # Step 5: Install Python packaging assets (Pinned to preserve Kivy Recipe compliance)
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install --upgrade "cython<3.0.0" virtualenv
         pip install buildozer
 
+    # Step 6: Isolated Caching Framework Matrix 
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -83,14 +90,23 @@ jobs:
         restore-keys: |
           buildozer-ndk-v4-${{ runner.os }}-
 
+    # Step 7: Flush output staging zones
     - name: Prepare Build Directory
       run: |
         rm -rf bin dist
         mkdir -p bin
 
+    # Step 8: Multi-Layer Toolchain Compilation Pass
+    # CRITICAL FIX: Explicitly seeds verified SDK license hashes into the runner environment
+    # to unconditionally satisfy automated license acceptance checks for build-tools 33.0.1.
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
+        
+        # Manually construct directory mapping and push accepted hashes straight into the environment
+        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+        echo -e "8933bad161d74778b1ee986cb188ee2db4d98d41\n2c4dfa0b3664441b6145965a46856a62fc13662d\n4007548d45762d043d891a51139c2770d1316499\n65135a51a17f229dd563945b38914b1f486e6efa\n601085b94cd77f6b54b97d34a34334deb323205c\n2512d8e17a81208d3d7bc9c1b9d3311f42cd60f7\n854f3175c13e5bc0c9b1d9ed40ece595e3b97b1a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+        
         buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
@@ -101,6 +117,7 @@ jobs:
         GRADLE_HOME: ""
       timeout-minutes: 120
 
+    # Step 9: Post-Compilation Integrity Assessment
     - name: Verify APK Creation
       run: |
         if [ -f bin/*.apk ]; then
@@ -113,6 +130,7 @@ jobs:
           exit 1
         fi
 
+    # Step 10: Deliver Compiled Asset package
     - name: Export Output Package Artifact
       uses: actions/upload-artifact@v4
       if: success()
@@ -122,6 +140,7 @@ jobs:
         retention-days: 7
         compression-level: 6
 
+    # Step 11: Fail-Safe Retrieval Mode (Captures output if something breaks natively)
     - name: Upload Build Logs on Failure
       uses: actions/upload-artifact@v4
       if: failure()
@@ -133,7 +152,8 @@ jobs:
         if-no-files-found: warn
         retention-days: 14
 
-    - name: Collect Comprehensive Runner Architecture Diagnostics
+    # Step 12: Collect Comprehensive Runner Architecture Diagnostics
+    - name: Collect Debug Information
       if: failure()
       run: |
         echo "=== Environment Info ==="
