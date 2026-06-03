@@ -39,12 +39,11 @@ from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
 
-# Storage path setup for cross-platform compatibility (Windows & Android)
+# Storage path setup for cross-platform compatibility (Windows & Android Scoped Storage)
 def get_data_filepath():
     if sys.platform == 'android':
-        from android.storage import app_context
-        # Use secure app-private internal storage
-        return os.path.join(app_context.getFilesDir().getAbsolutePath(), 'hr_data.json')
+        # Safely defaults to the secure, app-private sandbox partition
+        return os.path.join(App.get_running_app().user_data_dir, 'hr_data.json')
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hr_data.json')
 
 KV = """
@@ -390,7 +389,6 @@ class HRManagementSystemApp(App):
 
     def export_to_csv(self):
         try:
-            # Fixed: Uses app context user_data_dir to bypass Android Scoped Storage roadblocks
             if sys.platform == 'android':
                 out_path = os.path.join(self.user_data_dir, 'HR_System_Export.csv')
             else:
@@ -416,3 +414,4 @@ class HRManagementSystemApp(App):
 
 if __name__ == '__main__':
     HRManagementSystemApp().run()
+            
