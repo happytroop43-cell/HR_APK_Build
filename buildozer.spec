@@ -51,8 +51,8 @@ android.ndk_api = 21
 # (bool) If True, then skip truetype fonts to reduce APK size
 android.skip_heapsnapshot = 1
 
-# (list) The Android architectures to build for
-android.archs = arm64-v8a,armeabi-v7a
+# (list) The Android architectures to build for (Changed to single target for stability)
+android.archs = arm64-v8a
 
 # (bool) Allow backup
 android.allow_backup = True
