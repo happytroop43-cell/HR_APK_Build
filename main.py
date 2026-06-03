@@ -8,6 +8,9 @@ import threading
 from functools import partial
 from collections import defaultdict
 
+# Explicit application version metadata hook required by Buildozer compile scripts
+__version__ = "1.0.0"
+
 # ==========================================================
 # CROSS-PLATFORM GRAPHICS & COMPATIBILITY FIXES
 # ==========================================================
@@ -119,7 +122,7 @@ ScreenManagement:
                 halign: 'left'
                 valign: 'top'
                 size_hint_y: None
-                height: self.texture_size[1]
+                height: self.texture_size
                 text_size: self.width, None
             
         BoxLayout:
@@ -277,6 +280,10 @@ class AnalysisScreen(Screen):
         )
         self._cached_stats = report
         self.ids.stats.text = report
+
+    def reset_cache(self):
+        self._cached_stats = None
+
 class HRManagementSystemApp(App):
     people = ListProperty([])
 
