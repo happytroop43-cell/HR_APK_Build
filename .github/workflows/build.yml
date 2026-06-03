@@ -36,7 +36,7 @@ jobs:
       with:
         python-version: '3.11'
 
-    # Step 4: Provision system core libraries and compilation prerequisites
+    # Step 4: Provision system core libraries, compilation prerequisites, and local Android SDK manager
     - name: Install Complete System Dependencies
       run: |
         sudo apt-get update -qq
@@ -68,7 +68,8 @@ jobs:
           curl \
           wget \
           ccache \
-          gettext
+          gettext \
+          sdkmanager
 
     # Step 5: Install Python packaging assets
     - name: Install Python Build Tools
@@ -78,7 +79,7 @@ jobs:
         pip install buildozer
 
     # Step 6: Isolated Caching Framework Matrix
-    # Changed cache key to v6 to completely isolate and apply the forced license pass
+    # Cache version incremented to v7 to ensure a clean build slate
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -86,9 +87,9 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-v6-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v7-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v6-${{ runner.os }}-
+          buildozer-ndk-v7-${{ runner.os }}-
 
     # Step 7: Flush output staging zones
     - name: Prepare Build Directory
@@ -97,25 +98,35 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # FIXED: Automatically targets the standard Android SDK location used by Buildozer 
-    # and pipes auto-accept "yes" into every available license variation.
+    # FIXED: Uses the system sdkmanager to generate valid license tokens 
+    # and populates Buildozer's destination path before compilation starts.
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
         
-        # Pre-initialize Buildozer to safely unpack the Android SDK infrastructure natively
-        buildozer android licenses || true
+        # 1. Create the system android SDK license directories in advance
+        mkdir -p ~/.android
+        touch ~/.android/repositories.cfg
         
-        # Locate the freshly installed sdkmanager and force-pipe license acceptance signatures
-        SDK_MANAGER_PATH=$(find ~/.buildozer/ -name "sdkmanager" -type f | head -n 1)
-        if [ -n "$SDK_MANAGER_PATH" ]; then
-          echo "Found sdkmanager at: $SDK_MANAGER_PATH"
-          yes | $SDK_MANAGER_PATH --licenses || true
-        else
-          echo "Warning: sdkmanager not found yet, relying on fallback configurations."
+        # 2. Use the host system utility to accept all licenses completely
+        echo "Accepting baseline system licenses..."
+        yes | sdkmanager --licenses || true
+        
+        # 3. Create Buildozer's targeted internal license repository paths
+        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+        
+        # 4. Copy the accepted license signature keys into the Buildozer runtime path
+        if [ -d "/usr/lib/android-sdk/licenses" ]; then
+          cp -r /usr/lib/android-sdk/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/ || true
+        fi
+        if [ -d "~/.android/licenses" ]; then
+          cp -r ~/.android/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/ || true
         fi
         
-        # Execute final app packaging
+        # 5. Fallback check: explicitly seed known hash files if the directories were empty
+        echo -e "8933bad161d74778b1ee986cb188ee2db4d98d41\n2c4dfa0b3664441b6145965a46856a62fc13662d\n4007548d45762d043d891a51139c2770d1316499\n65135a51a17f229dd563945b38914b1f486e6efa\n601085b94cd77f6b54b97d34a34334deb323205c\n2512d8e17a81208d3d7bc9c1b9d3311f42cd60f7\n854f3175c13e5bc0c9b1d9ed40ece595e3b97b1a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+        
+        # 6. Execute final app packaging
         buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
