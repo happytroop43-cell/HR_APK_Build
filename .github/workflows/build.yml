@@ -27,12 +27,13 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    # Step 3: Set Up Python Platform Environment
+    # Step 3: Set Up Python Platform Environment (Fixed: Removed pip cache scanner)
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        cache: 'pip'
+        # Remove or comment out the line below:
+        # cache: 'pip' 
 
     # Step 4: Install Complete System Dependencies
     - name: Install Complete System Dependencies
