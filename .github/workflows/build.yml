@@ -35,7 +35,7 @@ jobs:
         python-version: '3.11'
         cache: 'pip'
 
-    # Step 4: Install Complete System Dependencies (ALL TOOLS)
+    # Step 4: Install Complete System Dependencies
     - name: Install Complete System Dependencies
       run: |
         sudo apt-get update -qq
@@ -59,8 +59,8 @@ jobs:
           libpng-dev \
           libfreetype6-dev \
           libharfbuzz0b \
-          libwebp6 \
-          libtiff5 \
+          libwebp-dev \
+          libtiff5-dev \
           git \
           zip \
           unzip \
@@ -69,22 +69,14 @@ jobs:
           ccache \
           gettext
 
-    # Step 5: Initialize libtool and autotools macros
-    - name: Initialize Autotools and Libtool
-      run: |
-        libtoolize --install --copy --force
-        aclocal -I /usr/share/aclocal
-        autoconf
-        automake --add-missing --copy --force-missing || true
-
-    # Step 6: Upgrade pip and install Python build tools
+    # Step 5: Upgrade pip and install Python build tools
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install --upgrade cython virtualenv
         pip install buildozer
 
-    # Step 7: Cache Buildozer & NDK to speed up subsequent builds
+    # Step 6: Cache Buildozer & NDK to speed up subsequent builds
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -96,38 +88,22 @@ jobs:
         restore-keys: |
           buildozer-ndk-${{ runner.os }}-
 
-    # Step 8: Accept Android SDK licenses
-    - name: Accept Android SDK Licenses
-      run: |
-        mkdir -p ~/.android
-        touch ~/.android/repositories.cfg
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
-
-    # Step 9: Configure buildozer environment variables
-    - name: Configure Buildozer Environment
-      run: |
-        export BUILDOZER_ACCEPT_SDK_LICENSE=1
-        export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
-        export ANDROID_NDK=$HOME/.buildozer/android/platform/android-ndk-25b
-        export ANDROID_SDK_ROOT=$ANDROID_HOME
-
-    # Step 10: Clean and prepare build (optional but recommended)
+    # Step 7: Clean and prepare build (optional but recommended)
     - name: Prepare Build Directory
       run: |
         rm -rf bin dist .buildozer/android/platform/build-* || true
         mkdir -p bin
 
-    # Step 11: Compile Application into Standalone APK
+    # Step 8: Compile Application into Standalone APK
     - name: Compile Application Layout into Standalone APK
       run: |
         yes | buildozer -v android debug 2>&1 | tee build_output.log
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
-        ANDROID_HOME: ${{ runner.temp }}/android-home
-        ANDROID_SDK_ROOT: ${{ runner.temp }}/android-home
+        BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
       timeout-minutes: 120
 
-    # Step 12: Verify APK was created
+    # Step 9: Verify APK was created
     - name: Verify APK Creation
       run: |
         if [ -f bin/*.apk ]; then
@@ -140,7 +116,7 @@ jobs:
           exit 1
         fi
 
-    # Step 13: Export Output Package Artifact (on success)
+    # Step 10: Export Output Package Artifact (on success)
     - name: Export Output Package Artifact
       uses: actions/upload-artifact@v4
       if: success()
@@ -150,7 +126,7 @@ jobs:
         retention-days: 7
         compression-level: 6
 
-    # Step 14: Upload Build Logs on Failure
+    # Step 11: Upload Build Logs on Failure
     - name: Upload Build Logs on Failure
       uses: actions/upload-artifact@v4
       if: failure()
@@ -161,7 +137,7 @@ jobs:
           build_output.log
         retention-days: 14
 
-    # Step 15: Collect Debug Information on Failure
+    # Step 12: Collect Debug Information on Failure
     - name: Collect Debug Information
       if: failure()
       run: |
@@ -178,7 +154,7 @@ jobs:
         echo "=== Available Disk Space ==="
         df -h
 
-    # Step 16: Final Status Summary
+    # Step 13: Final Status Summary
     - name: Build Status Summary
       if: always()
       run: |
