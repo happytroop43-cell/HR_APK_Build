@@ -86,24 +86,27 @@ jobs:
         restore-keys: |
           buildozer-ndk-${{ runner.os }}-
 
-    # Step 7: Clean and prepare build
+    # Step 7: Clean and prepare build (Added: Clear old hidden build caches)
     - name: Prepare Build Directory
       run: |
         rm -rf bin dist .buildozer/android/platform/build-* || true
+        rm -rf ~/.buildozer/android/platform/build-* || true
         mkdir -p bin
 
-    # Step 8: Compile Application (Fixed: Explicit environmental resets)
+    # Step 8: Compile Application (Fixed: Wipe out ANDROID_NDK_ROOT)
     - name: Compile Application Layout into Standalone APK
       run: |
         buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
         BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
-        # CRITICAL FIXES: Unset GitHub's pre-installed NDK and Gradle settings
+        # WIPE ALL HOSTED ENVIRONMENT OVERRIDES COMPLETELY
         ANDROID_NDK_HOME: ""
         ANDROID_NDK: ""
+        ANDROID_NDK_ROOT: ""
         GRADLE_HOME: ""
       timeout-minutes: 120
+
 
     # Step 9: Verify APK was created
     - name: Verify APK Creation
