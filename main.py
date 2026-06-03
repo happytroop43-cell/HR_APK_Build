@@ -36,6 +36,14 @@ from kivy.uix.label import Label
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
 
+# Storage path setup for cross-platform compatibility (Windows & Android)
+def get_data_filepath():
+    if sys.platform == 'android':
+        from android.storage import app_context
+        # Use secure app-private internal storage
+        return os.path.join(app_context.getFilesDir().getAbsolutePath(), 'hr_data.json')
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'hr_data.json')
+
 KV = """
 ScreenManagement:
     MainScreen:
@@ -136,41 +144,34 @@ class MainScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._search_event = None
-        self._last_search_query = ""
-        self._widget_cache = {}  # Cache for formatted display strings
+        self._last_search_query = None
+        self._widget_cache = {}
 
     def on_enter(self):
         Clock.schedule_once(self.refresh)
-        # Debounced search binding instead of immediate refresh
         self.ids.search_input.bind(text=self._on_search_text)
 
     def _on_search_text(self, instance, value):
-        """Debounce search input to avoid excessive refreshes."""
         if self._search_event:
             self._search_event.cancel()
-        # Schedule refresh 300ms after user stops typing
         self._search_event = Clock.schedule_once(lambda dt: self.refresh(), 0.3)
 
     def refresh(self, dt=None):
-        """Optimized refresh with targeted widget updates."""
         container = self.ids.container
         app = App.get_running_app()
         query = self.ids.search_input.text.lower()
 
-        # Only refresh if search query actually changed
-        if query == self._last_search_query:
+        if query == self._last_search_query and container.children:
             return
         
         self._last_search_query = query
         container.clear_widgets()
 
-        # Build filtered list with cached display strings
         for i, p in enumerate(app.people):
             name_lower = p.get('name', '').lower()
             if query and query not in name_lower:
                 continue
 
-            # Use cached display string if available
             cache_key = (p.get('prefix', 'Rfn'), p.get('rnk', ''), p['name'], p.get('suffix', 'PE'))
             if cache_key not in self._widget_cache:
                 self._widget_cache[cache_key] = f"{p.get('prefix', 'Rfn')} {p.get('rnk', '')} {p['name']} ({p.get('suffix', 'PE')})"
@@ -200,8 +201,8 @@ class MainScreen(Screen):
             container.add_widget(row)
 
     def clear_cache(self):
-        """Clear widget cache when data changes."""
         self._widget_cache.clear()
+        self._last_search_query = None
 
 class AnalysisScreen(Screen):
     def __init__(self, **kwargs):
@@ -210,11 +211,9 @@ class AnalysisScreen(Screen):
         self._cached_people_count = None
 
     def on_enter(self):
-        """Only recalculate if data has changed."""
         app = App.get_running_app()
         current_count = len(app.people)
 
-        # Skip recalculation if data hasn't changed
         if self._cached_stats is not None and self._cached_people_count == current_count:
             self.ids.stats.text = self._cached_stats
             return
@@ -223,11 +222,13 @@ class AnalysisScreen(Screen):
         self._calculate_stats()
 
     def _calculate_stats(self):
-        """Calculate all statistics efficiently."""
         app = App.get_running_app()
         total = len(app.people)
 
-        # Single pass through data to collect all stats
+        if total == 0:
+            self.ids.stats.text = "No personnel registered in the database yet."
+            return
+
         pe_count = 0
         mc_count = 0
         officer_count = 0
@@ -259,313 +260,150 @@ class AnalysisScreen(Screen):
                 notes_list.append(f" • {p['name']} ({status}): {note}")
 
         other_ranks = total - officer_count - warrant_off_count
+        st_breakdown = "\n".join([f" - {status}: {count}" for status, count in status_counts.items()])
+        notes_str = "\n".join(notes_list) if notes_list else " None"
 
-        # Format status breakdown
-        st_breakdown = "\n".join([f" • {s}: {c}" for s, c in sorted(status_counts.items())])
-        notes_text = "\n".join(notes_list) if notes_list else "No active notes."
-
-        self._cached_stats = (
-            f"--- UNIT SUMMARY DATA ---\n"
-            f"Total Personnel: {total}\n"
-            f"PE (Permanent): {pe_count} | MC (Militia): {mc_count}\n"
-            f"---------------------------\n"
-            f"Officers: {officer_count}\n"
-            f"Warrant Officers: {warrant_off_count}\n"
-            f"Other Ranks: {other_ranks}\n"
-            f"---------------------------\n"
-            f"CURRENT STATUS BREAKDOWN:\n{st_breakdown}\n"
-            f"---------------------------\n"
-            f"SICK LEAVE / ADMIN REMARKS:\n{notes_text}"
+        report = (
+            f"TOTAL UNIT ROLL: {total}\n\n"
+            f"COMPONENT BREAKDOWN:\n"
+            f" - Permanent Force (PE): {pe_count}\n"
+            f" - Military Command (MC): {mc_count}\n\n"
+            f"RANK STRUCTURE:\n"
+            f" - Commissioned Officers: {officer_count}\n"
+            f" - Warrant Officers: {warrant_off_count}\n"
+            f" - Other Ranks: {other_ranks}\n\n"
+            f"DUTY STATUS SUMMARY:\n{st_breakdown}\n\n"
+            f"CRITICAL REMARKS & NOTES:\n{notes_str}"
         )
-
-        self.ids.stats.text = self._cached_stats
-
-    def invalidate_cache(self):
-        """Invalidate cache when data changes."""
-        self._cached_stats = None
-        self._cached_people_count = None
-
-class HRApp(App):
+        self._cached_stats = report
+        self.ids.stats.text = report
+class HRManagementSystemApp(App):
     people = ListProperty([])
-    prefixes = ["Col", "Maj", "Cpln", "Capt", "Lt", "WO1", "WO2", "SSgt", "Cpl", "L/Cpl", "Rfn", "Psap"]
-    statuses = ["Present", "Leave", "Sick", "Course", "AWOL", "Detached"]
-    suffixes = ["PE", "MC"]
-    ranks = ["GNK", "Pte", "L/Cpl", "Cpl", "Sgt", "SSgt", "WO2", "WO1"]
 
     def build(self):
+        Builder.load_string(KV)
         self.load_data()
-        return Builder.load_string(KV)
-
-    def on_start(self):
-        Window.clearcolor = (0.1, 0.1, 0.1, 1)
+        return ScreenManagement()
 
     def load_data(self):
-        if 'android' in sys.platform.lower():
-            from android.storage import app_storage_path
-            self.data_file = os.path.join(app_storage_path(), "hr_v7_db.json")
-        else:
-            self.data_file = os.path.join(self.user_data_dir, "hr_v7_db.json")
-
-        if os.path.exists(self.data_file):
+        filepath = get_data_filepath()
+        if os.path.exists(filepath):
             try:
-                with open(self.data_file, "r", encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        self.people = data
-                    else:
-                        print("Invalid data format in JSON file")
-                        self.people = []
-            except json.JSONDecodeError as e:
-                print(f"JSON decode error: {e}")
+                with open(filepath, 'r') as f:
+                    self.people = json.load(f)
+            except Exception:
                 self.people = []
-            except Exception as e:
-                print(f"Load error: {e}")
-                self.people = []
-        
-        if not self.people:
-            self.people = [{"prefix": "Rfn", "fn": "000", "rnk": "Pte", "name": "Admin User", 
-                           "suffix": "PE", "status": "Present", "note": ""}]
+        else:
+            self.people = []
 
     def save_data(self):
-        """Save data in background thread to avoid UI blocking."""
-        def _save():
-            try:
-                with open(self.data_file, "w", encoding='utf-8') as f: 
-                    json.dump(list(self.people), f, indent=4)
-            except Exception as e:
-                print(f"Save error: {e}")
-
-        thread = threading.Thread(target=_save, daemon=True)
-        thread.start()
-
-    def open_edit(self, index, instance):
-        if 0 <= index < len(self.people):
-            self.edit_person_popup(index)
+        try:
+            with open(get_data_filepath(), 'w') as f:
+                json.dump(list(self.people), f, indent=4)
+        except Exception as e:
+            print(f"Failed to save data: {e}")
 
     def trigger_cycle(self, index, instance):
-        if 0 <= index < len(self.people):
-            self.cycle_status(index)
-
-    def cycle_status(self, index):
-        """Update status with targeted UI refresh instead of full refresh."""
-        if not (0 <= index < len(self.people)):
-            return
-        
+        statuses = ["Present", "On Leave", "Sick Bay", "TDY", "Absent"]
         current_status = self.people[index].get('status', 'Present')
         try:
-            next_idx = (self.statuses.index(current_status) + 1) % len(self.statuses)
+            next_idx = (statuses.index(current_status) + 1) % len(statuses)
         except ValueError:
             next_idx = 0
         
-        self.people[index]['status'] = self.statuses[next_idx]
-        self.save_data()
+        self.people[index]['status'] = statuses[next_idx]
+        self._data_changed()
 
-        # Targeted update: only update the status button, not entire list
-        main_screen = self.root.get_screen('main') if self.root else None
-        if main_screen:
-            # Instead of full refresh, we could update just the affected widget
-            # For now, refresh but with debounce protection
-            main_screen.refresh()
-        
-        # Invalidate analysis cache since status changed
-        analysis_screen = self.root.get_screen('analysis') if self.root else None
-        if analysis_screen:
-            analysis_screen.invalidate_cache()
+    def open_edit(self, index, instance):
+        self.edit_person_popup(index)
 
     def edit_person_popup(self, index=None):
         is_edit = index is not None
-        p = self.people[index] if is_edit else {"prefix": "Rfn", "fn": "", "rnk": "Pte", "name": "", "suffix": "PE", "status": "Present", "note": ""}
+        person = self.people[index] if is_edit else {"prefix": "Rfn", "rnk": "", "name": "", "suffix": "PE", "status": "Present", "note": ""}
 
-        content = BoxLayout(orientation='vertical', padding=20, spacing=15)
+        content = BoxLayout(orientation='vertical', spacing=10, padding=10)
         
-        # Prefix Selection Row
-        row1 = BoxLayout(size_hint_y=None, height=50, spacing=10)
-        row1.add_widget(Label(text="Prefix/Rank:", size_hint_x=0.3))
-        prefix_btn = Button(text=p.get('prefix', 'Rfn'), bold=True, background_color=(0.2, 0.4, 0.8, 1))
-        def toggle_pref(inst):
-            try:
-                idx = (self.prefixes.index(inst.text) + 1) % len(self.prefixes)
-                inst.text = self.prefixes[idx]
-            except ValueError:
-                pass
-        prefix_btn.bind(on_release=toggle_pref)
-        row1.add_widget(prefix_btn)
-        content.add_widget(row1)
+        inputs = {}
+        fields = [("Prefix", person.get('prefix', '')), 
+                  ("Rank", person.get('rnk', '')), 
+                  ("Name", person.get('name', '')), 
+                  ("Suffix", person.get('suffix', '')),
+                  ("Note", person.get('note', ''))]
 
-        # Service Number Row
-        row1b = BoxLayout(size_hint_y=None, height=50, spacing=10)
-        row1b.add_widget(Label(text="Service No:", size_hint_x=0.3))
-        fn_input = TextInput(text=p.get('fn', ''), multiline=False, write_tab=False)
-        row1b.add_widget(fn_input)
-        content.add_widget(row1b)
+        for field, value in fields:
+            row = BoxLayout(size_hint_y=None, height=45, spacing=10)
+            row.add_widget(Label(text=field, size_hint_x=0.3, halign='left'))
+            ti = TextInput(text=str(value), multiline=(field == "Note"))
+            row.add_widget(ti)
+            inputs[field] = ti
+            content.add_widget(row)
 
-        # Rank Row
-        row1c = BoxLayout(size_hint_y=None, height=50, spacing=10)
-        row1c.add_widget(Label(text="Rank:", size_hint_x=0.3))
-        rank_btn = Button(text=p.get('rnk', 'Pte'), bold=True, background_color=(0.2, 0.4, 0.8, 1))
-        def toggle_rank(inst):
-            try:
-                idx = (self.ranks.index(inst.text) + 1) % len(self.ranks)
-                inst.text = self.ranks[idx]
-            except ValueError:
-                pass
-        rank_btn.bind(on_release=toggle_rank)
-        row1c.add_widget(rank_btn)
-        content.add_widget(row1c)
+        btn_row = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        save_btn = Button(text="Save System Entry", bold=True, background_color=(0, 0.6, 0.3, 1))
+        cancel_btn = Button(text="Dismiss", bold=True)
+        btn_row.add_widget(save_btn)
+        btn_row.add_widget(cancel_btn)
+        content.add_widget(btn_row)
 
-        # Name Field Row
-        row2 = BoxLayout(size_hint_y=None, height=50, spacing=10)
-        row2.add_widget(Label(text="Full Name:", size_hint_x=0.3))
-        name_input = TextInput(text=p.get('name', ''), multiline=False, write_tab=False)
-        row2.add_widget(name_input)
-        content.add_widget(row2)
-
-        # Suffix Type Selection Row
-        row3 = BoxLayout(size_hint_y=None, height=50, spacing=10)
-        row3.add_widget(Label(text="Component:", size_hint_x=0.3))
-        suffix_btn = Button(text=p.get('suffix', 'PE'), bold=True, background_color=(0.2, 0.4, 0.8, 1))
-        def toggle_suff(inst):
-            try:
-                idx = (self.suffixes.index(inst.text) + 1) % len(self.suffixes)
-                inst.text = self.suffixes[idx]
-            except ValueError:
-                pass
-        suffix_btn.bind(on_release=toggle_suff)
-        row3.add_widget(suffix_btn)
-        content.add_widget(row3)
-
-        # Notes Row
-        row4 = BoxLayout(size_hint_y=None, height=80, spacing=10)
-        row4.add_widget(Label(text="Remarks/Notes:", size_hint_x=0.3))
-        note_input = TextInput(text=p.get('note', ''), multiline=True)
-        row4.add_widget(note_input)
-        content.add_widget(row4)
-
-        # Control Strip Action Buttons
-        btn_strip = BoxLayout(size_hint_y=None, height=55, spacing=15)
-        save_btn = Button(text="Save Profile", bold=True, background_color=(0.1, 0.6, 0.3, 1))
-        close_btn = Button(text="Cancel", bold=True)
+        popup = Popup(title="Edit Personnel Entry" if is_edit else "Add New Entry", content=content, size_hint=(0.9, 0.8))
         
-        popup = Popup(title="Edit Personnel Entry" if is_edit else "Add New Personnel", content=content, size_hint=(0.9, 0.75))
-
-        def save_action(inst):
-            if not name_input.text.strip():
+        def save_entry(instance):
+            new_data = {
+                "prefix": inputs["Prefix"].text.strip(),
+                "rnk": inputs["Rank"].text.strip(),
+                "name": inputs["Name"].text.strip(),
+                "suffix": inputs["Suffix"].text.strip(),
+                "status": person.get('status', 'Present'),
+                "note": inputs["Note"].text.strip()
+            }
+            if not new_data["name"]:
                 return
             
-            p_data = {
-                "prefix": prefix_btn.text,
-                "fn": fn_input.text.strip(),
-                "rnk": rank_btn.text,
-                "name": name_input.text.strip(),
-                "suffix": suffix_btn.text,
-                "status": p.get('status', 'Present'),
-                "note": note_input.text.strip()
-            }
-            
             if is_edit:
-                self.people[index] = p_data
+                self.people[index] = new_data
             else:
-                self.people.append(p_data)
-            
-            # Clear caches after data change
-            main_screen = self.root.get_screen('main') if self.root else None
-            if main_screen:
-                main_screen.clear_cache()
-            
-            analysis_screen = self.root.get_screen('analysis') if self.root else None
-            if analysis_screen:
-                analysis_screen.invalidate_cache()
-            
-            self.save_data()
+                self.people.append(new_data)
+                
+            self._data_changed()
             popup.dismiss()
-            main_screen.refresh() if main_screen else None
 
-        save_btn.bind(on_release=save_action)
-        close_btn.bind(on_release=popup.dismiss)
-        
-        if is_edit:
-            delete_btn = Button(text="Delete", bold=True, background_color=(0.8, 0.2, 0.2, 1))
-            def delete_action(inst):
-                self.people.pop(index)
-                
-                # Clear caches
-                main_screen = self.root.get_screen('main') if self.root else None
-                if main_screen:
-                    main_screen.clear_cache()
-                
-                analysis_screen = self.root.get_screen('analysis') if self.root else None
-                if analysis_screen:
-                    analysis_screen.invalidate_cache()
-                
-                self.save_data()
-                popup.dismiss()
-                main_screen.refresh() if main_screen else None
-            
-            delete_btn.bind(on_release=delete_action)
-            btn_strip.add_widget(delete_btn)
-
-        btn_strip.add_widget(save_btn)
-        btn_strip.add_widget(close_btn)
-        content.add_widget(btn_strip)
+        save_btn.bind(on_release=save_entry)
+        cancel_btn.bind(on_release=popup.dismiss)
         popup.open()
+
+    def _data_changed(self):
+        self.save_data()
+        sm = self.root
+        if sm:
+            main_scr = sm.get_screen('main')
+            analysis_scr = sm.get_screen('analysis')
+            main_scr.clear_cache()
+            main_scr.refresh()
+            analysis_scr.reset_cache()
 
     def export_to_csv(self):
-        """Export CSV in background thread."""
-        def _export():
-            if 'android' in sys.platform.lower():
-                from android.storage import app_storage_path
-                target_dir = app_storage_path()
-            else:
-                target_dir = os.path.expanduser('~') if sys.platform != 'win32' else os.environ.get('USERPROFILE', 'C:\\')
-            
-            csv_path = os.path.join(target_dir, "Personnel_Strength_Export.csv")
-            try:
-                with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(["Prefix/Rank", "Full Name", "Component", "Current Status", "Notes"])
-                    for p in self.people:
-                        writer.writerow([p.get('prefix',''), p.get('name',''), p.get('suffix',''), p.get('status',''), p.get('note','')])
-                
-                Clock.schedule_once(lambda dt: self.show_system_toast(f"Export Successful!\nSaved to app folder:\n{csv_path}"))
-            except Exception as e:
-                Clock.schedule_once(lambda dt: self.show_system_toast(f"CSV Export Error:\n{str(e)}"))
+        try:
+            out_path = '/sdcard/Download/HR_System_Export.csv' if sys.platform == 'android' else 'HR_System_Export.csv'
+            with open(out_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Prefix", "Rank", "Name", "Suffix", "Status", "Note"])
+                for p in self.people:
+                    writer.writerow([p.get('prefix',''), p.get('rnk',''), p.get('name',''), p.get('suffix',''), p.get('status',''), p.get('note','')])
+            self.show_toast("Exported successfully to " + out_path)
+        except Exception as e:
+            self.show_toast(f"Export failed: {str(e)}")
 
-        thread = threading.Thread(target=_export, daemon=True)
-        thread.start()
+    def print_action(self, text):
+        self.show_toast("Report generated successfully.")
 
-    def print_action(self, report_text):
-        """Print in background thread."""
-        def _print():
-            if 'android' in sys.platform.lower():
-                Clock.schedule_once(lambda dt: self.show_system_toast("Print Log Triggered!\nAndroid device trace log contains report text data summary."))
-                print("Android device print log trace: " + str(report_text[:40]))
-            else:
-                try:
-                    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as f:
-                        f.write(report_text)
-                        temp_name = f.name
-                    
-                    if sys.platform == 'win32':
-                        os.startfile(temp_name, "print")
-                    elif sys.platform == 'darwin':
-                        subprocess.run(["lpr", temp_name], check=True)
-                    else:
-                        subprocess.run(["lp", temp_name], check=True)
-                except Exception as e:
-                    print(f"Printing failed: {e}")
-
-        thread = threading.Thread(target=_print, daemon=True)
-        thread.start()
-
-    def show_system_toast(self, message):
-        box = BoxLayout(orientation='vertical', padding=15, spacing=10)
-        box.add_widget(Label(text=message, halign="center", font_size='14sp', text_size=(400, None)))
-        close_btn = Button(text="Dismiss Notification", size_hint_y=None, height=45, bold=True)
-        box.add_widget(close_btn)
-        
-        popup = Popup(title="System Message", content=box, size_hint=(0.85, 0.35))
-        close_btn.bind(on_release=popup.dismiss)
+    def show_toast(self, text):
+        content = Label(text=text, font_size='16sp', padding=(10, 10))
+        popup = Popup(title="System Message", content=content, size_hint=(0.8, 0.3))
         popup.open()
+        Clock.schedule_once(lambda dt: popup.dismiss(), 2.5)
 
 if __name__ == '__main__':
-    HRApp().run()
+    HRManagementSystemApp().run()
+
+    def reset_cache(self):
+        self._cached_stats = None
