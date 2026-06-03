@@ -86,14 +86,15 @@ jobs:
         restore-keys: |
           buildozer-ndk-${{ runner.os }}-
 
-    # Step 7: Clean and prepare build (Added: Clear old hidden build caches)
+    # Step 7: Clean and prepare build (Wipes local and global build caches thoroughly)
     - name: Prepare Build Directory
       run: |
-        rm -rf bin dist .buildozer/android/platform/build-* || true
+        rm -rf bin dist .buildozer/
         rm -rf ~/.buildozer/android/platform/build-* || true
+        rm -rf ~/.buildozer/android/platform/python-for-android || true
         mkdir -p bin
 
-    # Step 8: Compile Application (Fixed: Wipe out ANDROID_NDK_ROOT)
+   # Step 8: Compile Application (Fixed: Wipe out ANDROID_NDK_ROOT)
     - name: Compile Application Layout into Standalone APK
       run: |
         buildozer -v android debug
