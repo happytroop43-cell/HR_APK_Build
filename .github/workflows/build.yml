@@ -5,7 +5,6 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# Cleans up runner annotation logs and forces Node 24 standard pipelines
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -24,7 +23,7 @@ jobs:
       with:
         fetch-depth: 1
 
-    # Step 2: Establish Java Environment (Crucial for modern Android Gradle toolchains)
+    # Step 2: Establish Java Environment
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
@@ -71,15 +70,15 @@ jobs:
           ccache \
           gettext
 
-    # Step 5: Install Python packaging assets (Pinned to preserve Kivy Recipe compliance)
+    # Step 5: Install Python packaging assets
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install --upgrade "cython<3.0.0" virtualenv
         pip install buildozer
 
-    # Step 6: Isolated Caching Framework Matrix 
-    # Key bumped to v5 to discard any broken, partially empty SDK directory mappings
+    # Step 6: Isolated Caching Framework Matrix
+    # Changed cache key to v6 to completely isolate and apply the forced license pass
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -87,9 +86,9 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-v5-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v6-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v5-${{ runner.os }}-
+          buildozer-ndk-v6-${{ runner.os }}-
 
     # Step 7: Flush output staging zones
     - name: Prepare Build Directory
@@ -98,12 +97,26 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # FORCED FIX: Overrides the spec file directly via command line flags 
-    # to stop it from fetching experimental version 37.
+    # FIXED: Automatically targets the standard Android SDK location used by Buildozer 
+    # and pipes auto-accept "yes" into every available license variation.
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
-        buildozer android debug --android.api=33 --android.build_tools_version=33.0.1 --android.ndk=25b
+        
+        # Pre-initialize Buildozer to safely unpack the Android SDK infrastructure natively
+        buildozer android licenses || true
+        
+        # Locate the freshly installed sdkmanager and force-pipe license acceptance signatures
+        SDK_MANAGER_PATH=$(find ~/.buildozer/ -name "sdkmanager" -type f | head -n 1)
+        if [ -n "$SDK_MANAGER_PATH" ]; then
+          echo "Found sdkmanager at: $SDK_MANAGER_PATH"
+          yes | $SDK_MANAGER_PATH --licenses || true
+        else
+          echo "Warning: sdkmanager not found yet, relying on fallback configurations."
+        fi
+        
+        # Execute final app packaging
+        buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
         BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
@@ -112,7 +125,6 @@ jobs:
         ANDROID_NDK_ROOT: ""
         GRADLE_HOME: ""
       timeout-minutes: 120
-      
 
     # Step 9: Post-Compilation Integrity Assessment
     - name: Verify APK Creation
@@ -137,7 +149,7 @@ jobs:
         retention-days: 7
         compression-level: 6
 
-    # Step 11: Fail-Safe Retrieval Mode (Captures output if something breaks natively)
+    # Step 11: Fail-Safe Retrieval Mode
     - name: Upload Build Logs on Failure
       uses: actions/upload-artifact@v4
       if: failure()
@@ -148,17 +160,4 @@ jobs:
           buildozer.log
         if-no-files-found: warn
         retention-days: 14
-
-    # Step 12: Collect Comprehensive Runner Architecture Diagnostics
-    - name: Collect Debug Information
-      if: failure()
-      run: |
-        echo "=== Environment Info ==="
-        python --version
-        java -version
-        buildozer --version
-        pip show cython
-        echo "=== Storage Check ==="
-        du -sh ~/.buildozer 2>/dev/null || echo "Data target missing"
-        df -h
         
