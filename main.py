@@ -59,7 +59,6 @@ ScreenManagement:
             multiline: False
             size_hint_y: None
             height: 55
-            on_text: root.refresh()
         
         BoxLayout:
             size_hint_y: None
@@ -80,6 +79,7 @@ ScreenManagement:
                 on_release: app.export_to_csv()
         
         ScrollView:
+            size_hint_y: 1
             GridLayout:
                 id: container
                 cols: 1
@@ -101,6 +101,7 @@ ScreenManagement:
             height: 60
         
         ScrollView:
+            size_hint_y: 1
             Label:
                 id: stats
                 text: "Calculating..."
@@ -108,7 +109,7 @@ ScreenManagement:
                 halign: 'left'
                 valign: 'top'
                 size_hint_y: None
-                height: self.texture_size
+                height: self.texture_size[1]
                 text_size: self.width, None
             
         BoxLayout:
@@ -132,6 +133,8 @@ class ScreenManagement(ScreenManager):
 class MainScreen(Screen):
     def on_enter(self):
         Clock.schedule_once(self.refresh)
+        # Bind search input to refresh when text changes
+        self.ids.search_input.bind(text=lambda inst, val: self.refresh())
 
     def refresh(self, dt=None):
         container = self.ids.container
@@ -273,8 +276,11 @@ class HRApp(App):
         row1.add_widget(Label(text="Prefix/Rank:", size_hint_x=0.3))
         prefix_btn = Button(text=p.get('prefix', 'Rfn'), bold=True, background_color=(0.2, 0.4, 0.8, 1))
         def toggle_pref(inst):
-            idx = (self.prefixes.index(inst.text) + 1) % len(self.prefixes)
-            inst.text = self.prefixes[idx]
+            try:
+                idx = (self.prefixes.index(inst.text) + 1) % len(self.prefixes)
+                inst.text = self.prefixes[idx]
+            except ValueError:
+                pass
         prefix_btn.bind(on_release=toggle_pref)
         row1.add_widget(prefix_btn)
         content.add_widget(row1)
@@ -291,8 +297,11 @@ class HRApp(App):
         row1c.add_widget(Label(text="Rank:", size_hint_x=0.3))
         rank_btn = Button(text=p.get('rnk', 'Pte'), bold=True, background_color=(0.2, 0.4, 0.8, 1))
         def toggle_rank(inst):
-            idx = (self.ranks.index(inst.text) + 1) % len(self.ranks)
-            inst.text = self.ranks[idx]
+            try:
+                idx = (self.ranks.index(inst.text) + 1) % len(self.ranks)
+                inst.text = self.ranks[idx]
+            except ValueError:
+                pass
         rank_btn.bind(on_release=toggle_rank)
         row1c.add_widget(rank_btn)
         content.add_widget(row1c)
@@ -309,8 +318,11 @@ class HRApp(App):
         row3.add_widget(Label(text="Component:", size_hint_x=0.3))
         suffix_btn = Button(text=p.get('suffix', 'PE'), bold=True, background_color=(0.2, 0.4, 0.8, 1))
         def toggle_suff(inst):
-            idx = (self.suffixes.index(inst.text) + 1) % len(self.suffixes)
-            inst.text = self.suffixes[idx]
+            try:
+                idx = (self.suffixes.index(inst.text) + 1) % len(self.suffixes)
+                inst.text = self.suffixes[idx]
+            except ValueError:
+                pass
         suffix_btn.bind(on_release=toggle_suff)
         row3.add_widget(suffix_btn)
         content.add_widget(row3)
