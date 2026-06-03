@@ -8,62 +8,139 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      actions: read
 
     steps:
+    # Step 1: Checkout source code
     - name: Checkout Source Code Files
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
 
+    # Step 2: Set Up Java Development Kit
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
-        distribution: 'adopt'
+        distribution: 'temurin'
         java-version: '17'
+        cache: 'gradle'
 
+    # Step 3: Set Up Python Platform Environment
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        cache: 'pip'
 
-    - name: Install System Dependencies
+    # Step 4: Install Complete System Dependencies (ALL TOOLS)
+    - name: Install Complete System Dependencies
       run: |
-        sudo apt-get update
+        sudo apt-get update -qq
         sudo apt-get install -y \
           build-essential \
+          autoconf \
+          automake \
+          autotools-dev \
+          libtool \
+          libtool-bin \
+          m4 \
+          pkg-config \
           libffi-dev \
           libssl-dev \
+          libsqlite3-dev \
+          zlib1g-dev \
+          libbz2-dev \
+          libreadline-dev \
+          libncurses5-dev \
           libjpeg-dev \
           libpng-dev \
           libfreetype6-dev \
           libharfbuzz0b \
           libwebp6 \
           libtiff5 \
-          pkg-config \
           git \
           zip \
           unzip \
-          ccache
+          curl \
+          wget \
+          ccache \
+          gettext
 
+    # Step 5: Initialize libtool and autotools macros
+    - name: Initialize Autotools and Libtool
+      run: |
+        libtoolize --install --copy --force
+        aclocal -I /usr/share/aclocal
+        autoconf
+        automake --add-missing --copy --force-missing || true
+
+    # Step 6: Upgrade pip and install Python build tools
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        pip install buildozer cython virtualenv
+        pip install --upgrade cython virtualenv
+        pip install buildozer
 
+    # Step 7: Cache Buildozer & NDK to speed up subsequent builds
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
         path: |
           ~/.buildozer
           ~/.gradle
+          ~/.android
         key: buildozer-ndk-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
           buildozer-ndk-${{ runner.os }}-
 
+    # Step 8: Accept Android SDK licenses
+    - name: Accept Android SDK Licenses
+      run: |
+        mkdir -p ~/.android
+        touch ~/.android/repositories.cfg
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || true
+
+    # Step 9: Configure buildozer environment variables
+    - name: Configure Buildozer Environment
+      run: |
+        export BUILDOZER_ACCEPT_SDK_LICENSE=1
+        export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
+        export ANDROID_NDK=$HOME/.buildozer/android/platform/android-ndk-25b
+        export ANDROID_SDK_ROOT=$ANDROID_HOME
+
+    # Step 10: Clean and prepare build (optional but recommended)
+    - name: Prepare Build Directory
+      run: |
+        rm -rf bin dist .buildozer/android/platform/build-* || true
+        mkdir -p bin
+
+    # Step 11: Compile Application into Standalone APK
     - name: Compile Application Layout into Standalone APK
       run: |
-        yes | buildozer -v android debug
+        yes | buildozer -v android debug 2>&1 | tee build_output.log
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
+        ANDROID_HOME: ${{ runner.temp }}/android-home
+        ANDROID_SDK_ROOT: ${{ runner.temp }}/android-home
+      timeout-minutes: 120
 
+    # Step 12: Verify APK was created
+    - name: Verify APK Creation
+      run: |
+        if [ -f bin/*.apk ]; then
+          echo "APK created successfully:"
+          ls -lh bin/*.apk
+          file bin/*.apk
+        else
+          echo "ERROR: APK file not found in bin directory"
+          ls -lha bin/ || echo "bin directory does not exist"
+          exit 1
+        fi
+
+    # Step 13: Export Output Package Artifact (on success)
     - name: Export Output Package Artifact
       uses: actions/upload-artifact@v4
       if: success()
@@ -71,10 +148,44 @@ jobs:
         name: Compiled-HR-System-APK
         path: bin/*.apk
         retention-days: 7
+        compression-level: 6
 
+    # Step 14: Upload Build Logs on Failure
     - name: Upload Build Logs on Failure
       uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: Build-Logs
-        path: .buildozer/android/platform/build-*/build.log
+        path: |
+          .buildozer/android/platform/build-*/build.log
+          build_output.log
+        retention-days: 14
+
+    # Step 15: Collect Debug Information on Failure
+    - name: Collect Debug Information
+      if: failure()
+      run: |
+        echo "=== Python Version ==="
+        python --version
+        echo "=== Java Version ==="
+        java -version
+        echo "=== Buildozer Version ==="
+        buildozer --version
+        echo "=== Cython Version ==="
+        pip show cython
+        echo "=== Build Directory Size ==="
+        du -sh .buildozer 2>/dev/null || echo "Build directory not found"
+        echo "=== Available Disk Space ==="
+        df -h
+
+    # Step 16: Final Status Summary
+    - name: Build Status Summary
+      if: always()
+      run: |
+        echo "Build completed with status: ${{ job.status }}"
+        if [ "${{ job.status }}" = "success" ]; then
+          echo "✓ APK build successful"
+          ls -lh bin/*.apk 2>/dev/null || echo "No APK files found"
+        else
+          echo "✗ Build failed - check logs above"
+        fi
