@@ -196,6 +196,7 @@ class HRApp(App):
     prefixes = ["Col", "Maj", "Cpln", "Capt", "Lt", "WO1", "WO2", "SSgt", "Cpl", "L/Cpl", "Rfn", "Psap"]
     statuses = ["Present", "Leave", "Sick", "Course", "AWOL", "Detached"]
     suffixes = ["PE", "MC"]
+    ranks = ["GNK", "Pte", "L/Cpl", "Cpl", "Sgt", "SSgt", "WO2", "WO1"]
 
     def build(self):
         self.load_data()
@@ -214,8 +215,17 @@ class HRApp(App):
         if os.path.exists(self.data_file):
             try:
                 with open(self.data_file, "r", encoding='utf-8') as f:
-                    self.people = json.load(f)
-            except Exception:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        self.people = data
+                    else:
+                        print("Invalid data format in JSON file")
+                        self.people = []
+            except json.JSONDecodeError as e:
+                print(f"JSON decode error: {e}")
+                self.people = []
+            except Exception as e:
+                print(f"Load error: {e}")
                 self.people = []
         
         if not self.people:
@@ -230,12 +240,16 @@ class HRApp(App):
             print(f"Save error: {e}")
 
     def open_edit(self, index, instance):
-        self.edit_person_popup(index)
+        if 0 <= index < len(self.people):
+            self.edit_person_popup(index)
 
     def trigger_cycle(self, index, instance):
-        self.cycle_status(index)
+        if 0 <= index < len(self.people):
+            self.cycle_status(index)
 
     def cycle_status(self, index):
+        if not (0 <= index < len(self.people)):
+            return
         current_status = self.people[index].get('status', 'Present')
         try:
             next_idx = (self.statuses.index(current_status) + 1) % len(self.statuses)
@@ -250,7 +264,7 @@ class HRApp(App):
 
     def edit_person_popup(self, index=None):
         is_edit = index is not None
-        p = self.people[index] if is_edit else {"prefix": "Rfn", "fn": "", "rnk": "", "name": "", "suffix": "PE", "status": "Present", "note": ""}
+        p = self.people[index] if is_edit else {"prefix": "Rfn", "fn": "", "rnk": "Pte", "name": "", "suffix": "PE", "status": "Present", "note": ""}
 
         content = BoxLayout(orientation='vertical', padding=20, spacing=15)
         
@@ -264,6 +278,24 @@ class HRApp(App):
         prefix_btn.bind(on_release=toggle_pref)
         row1.add_widget(prefix_btn)
         content.add_widget(row1)
+
+        # Service Number Row
+        row1b = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        row1b.add_widget(Label(text="Service No:", size_hint_x=0.3))
+        fn_input = TextInput(text=p.get('fn', ''), multiline=False, write_tab=False)
+        row1b.add_widget(fn_input)
+        content.add_widget(row1b)
+
+        # Rank Row
+        row1c = BoxLayout(size_hint_y=None, height=50, spacing=10)
+        row1c.add_widget(Label(text="Rank:", size_hint_x=0.3))
+        rank_btn = Button(text=p.get('rnk', 'Pte'), bold=True, background_color=(0.2, 0.4, 0.8, 1))
+        def toggle_rank(inst):
+            idx = (self.ranks.index(inst.text) + 1) % len(self.ranks)
+            inst.text = self.ranks[idx]
+        rank_btn.bind(on_release=toggle_rank)
+        row1c.add_widget(rank_btn)
+        content.add_widget(row1c)
 
         # Name Field Row
         row2 = BoxLayout(size_hint_y=None, height=50, spacing=10)
@@ -303,8 +335,8 @@ class HRApp(App):
             
             p_data = {
                 "prefix": prefix_btn.text,
-                "fn": p.get('fn', ''),
-                "rnk": p.get('rnk', ''),
+                "fn": fn_input.text.strip(),
+                "rnk": rank_btn.text,
                 "name": name_input.text.strip(),
                 "suffix": suffix_btn.text,
                 "status": p.get('status', 'Present'),
