@@ -20,8 +20,8 @@ source.include_exts = py, png, jpg, kv, json
 source.exclude_exts = spec
 
 # (list) Application requirements
-# Buildozer handles downloading and injecting these safely
-requirements = python3, kivy
+# Core requirements for Kivy Android application
+requirements = python3,kivy,pyjnius,android
 
 # (str) Supported orientations (landscape, portrait or all)
 orientation = portrait
@@ -34,7 +34,7 @@ orientation = portrait
 fullscreen = 1
 
 # (list) Permissions required by the app for CSV file exporting
-android.permissions = android.permission.WRITE_EXTERNAL_STORAGE, android.permission.READ_EXTERNAL_STORAGE, android.permission.MANAGE_EXTERNAL_STORAGE
+android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE
 
 # (int) Target Android API, should be as high as possible.
 android.api = 31
@@ -49,10 +49,13 @@ android.ndk = 25b
 android.skip_heapsnapshot = 1
 
 # (list) The Android architectures to build for
-android.archs = arm64-v8a, armeabi-v7a
+android.archs = arm64-v8a,armeabi-v7a
 
 # (bool) Allow backup
 android.allow_backup = True
+
+# (str) Android logcat filters to use
+android.logcat_filters = *:S python:D
 
 # ==========================================================
 # BUILDOZER SETTINGS
