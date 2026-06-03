@@ -390,13 +390,18 @@ class HRManagementSystemApp(App):
 
     def export_to_csv(self):
         try:
-            out_path = '/sdcard/Download/HR_System_Export.csv' if sys.platform == 'android' else 'HR_System_Export.csv'
+            # Fixed: Uses app context user_data_dir to bypass Android Scoped Storage roadblocks
+            if sys.platform == 'android':
+                out_path = os.path.join(self.user_data_dir, 'HR_System_Export.csv')
+            else:
+                out_path = 'HR_System_Export.csv'
+                
             with open(out_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(["Prefix", "Rank", "Name", "Suffix", "Status", "Note"])
                 for p in self.people:
                     writer.writerow([p.get('prefix',''), p.get('rnk',''), p.get('name',''), p.get('suffix',''), p.get('status',''), p.get('note','')])
-            self.show_toast("Exported successfully to " + out_path)
+            self.show_toast("Exported successfully to:\n" + out_path)
         except Exception as e:
             self.show_toast(f"Export failed: {str(e)}")
 
@@ -411,6 +416,3 @@ class HRManagementSystemApp(App):
 
 if __name__ == '__main__':
     HRManagementSystemApp().run()
-
-    def reset_cache(self):
-        self._cached_stats = None
