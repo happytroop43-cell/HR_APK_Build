@@ -98,11 +98,12 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # Cleaned: Removes manual directory generation to let Buildozer fetch sdkmanager cleanly.
+    # FORCED FIX: Overrides the spec file directly via command line flags 
+    # to stop it from fetching experimental version 37.
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
-        buildozer -v android debug
+        buildozer android debug --android.api=33 --android.build_tools_version=33.0.1 --android.ndk=25b
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
         BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
@@ -111,6 +112,7 @@ jobs:
         ANDROID_NDK_ROOT: ""
         GRADLE_HOME: ""
       timeout-minutes: 120
+      
 
     # Step 9: Post-Compilation Integrity Assessment
     - name: Verify APK Creation
