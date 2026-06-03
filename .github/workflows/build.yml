@@ -14,26 +14,26 @@ jobs:
       actions: read
 
     steps:
-    # Step 1: Checkout source code
+    # Step 1: Download your source code files onto the empty runner instance
     - name: Checkout Source Code Files
       uses: actions/checkout@v4
       with:
         fetch-depth: 1
 
-    # Step 2: Set Up Java Development Kit (Fixed: Cache scan disabled)
+    # Step 2: Set Up Java Development Kit (Fixed: Cache disabled to prevent root project scanning crashes)
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    # Step 3: Set Up Python Platform Environment (Fixed: Cache scan disabled)
+    # Step 3: Set Up Python Platform (Fixed: Cache disabled to prevent root requirements.txt scanning crashes)
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    # Step 4: Install Complete System Dependencies
+    # Step 4: Install Complete Linux Toolchain & Build Essentials
     - name: Install Complete System Dependencies
       run: |
         sudo apt-get update -qq
@@ -67,14 +67,14 @@ jobs:
           ccache \
           gettext
 
-    # Step 5: Upgrade pip and install Python build tools (Fixed: Pinned Cython version)
+    # Step 5: Install Python Packaging Assets (Fixed: Pinned Cython < 3.0 to align with Kivy recipes)
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install --upgrade "cython<3.0.0" virtualenv
         pip install buildozer
 
-    # Step 6: Cache Buildozer & NDK to speed up subsequent builds
+    # Step 6: Isolated Caching Matrix (Fixed: Key bumped to v3 to invalidate old corrupted libffi source blocks)
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -82,11 +82,11 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v3-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-${{ runner.os }}-
+          buildozer-ndk-v3-${{ runner.os }}-
 
-    # Step 7: Clean and prepare build (Fixed: Thoroughly wipes old corrupted toolchain states)
+    # Step 7: Clean workspace prep (Fixed: Aggressively deletes broken platform caches from previous attempts)
     - name: Prepare Build Directory
       run: |
         rm -rf bin dist .buildozer/
@@ -94,24 +94,25 @@ jobs:
         rm -rf ~/.buildozer/android/platform/python-for-android || true
         mkdir -p bin
 
-    # Step 8: Compile Application into Standalone APK (Fixed: Erased NDK variable bleedover & fixed libffi macros)
+    # Step 8: Multi-Layer Toolchain Compilation Pass
+    # Fixes:
+    # 1. Injects ACLOCAL_PATH to fix libffi macro error (LT_SYS_SYMBOL_USCORE) on Ubuntu 24.04 runner.
+    # 2. Scrubs ANDROID_NDK system variables to stop the runner from forcing NDK 27.
+    # 3. Drops masked pipeline tricks (| tee) so true errors surface natively.
     - name: Compile Application Layout into Standalone APK
       run: |
-        # Fix libffi macro issues on modern Ubuntu runners
         export ACLOCAL_PATH="/usr/share/aclocal"
-        
         buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
         BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
-        # Explicitly scrub host runner system defaults
         ANDROID_NDK_HOME: ""
         ANDROID_NDK: ""
         ANDROID_NDK_ROOT: ""
         GRADLE_HOME: ""
       timeout-minutes: 120
 
-    # Step 9: Verify APK was created
+    # Step 9: Asset Verification Stage
     - name: Verify APK Creation
       run: |
         if [ -f bin/*.apk ]; then
@@ -124,7 +125,7 @@ jobs:
           exit 1
         fi
 
-    # Step 10: Export Output Package Artifact (on success)
+    # Step 10: Export Package Outward (Triggers only on absolute success)
     - name: Export Output Package Artifact
       uses: actions/upload-artifact@v4
       if: success()
@@ -134,7 +135,7 @@ jobs:
         retention-days: 7
         compression-level: 6
 
-    # Step 11: Upload Build Logs on Failure
+    # Step 11: Fail-Safe Asset Retrieval (Triggers only if compilation hits a structural block)
     - name: Upload Build Logs on Failure
       uses: actions/upload-artifact@v4
       if: failure()
@@ -144,7 +145,7 @@ jobs:
           .buildozer/android/platform/build-*/build.log
         retention-days: 14
 
-    # Step 12: Collect Debug Information on Failure
+    # Step 12: Collect Comprehensive Engine Diagnostics
     - name: Collect Debug Information
       if: failure()
       run: |
@@ -161,7 +162,7 @@ jobs:
         echo "=== Available Disk Space ==="
         df -h
 
-    # Step 13: Final Status Summary
+    # Step 13: Absolute Close Hook (Fixed: Correct conditional formatting and trailing 'fi' block)
     - name: Build Status Summary
       if: always()
       run: |
