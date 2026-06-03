@@ -78,7 +78,7 @@ jobs:
         pip install buildozer
 
     # Step 6: Isolated Caching Framework Matrix
-    # Incremented to cache key v10 to clear out all half-baked toolchain folders
+    # Incremented cache key to v11 to completely discard any half-baked or broken SDK runs
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -86,9 +86,9 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-v10-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v11-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v10-${{ runner.os }}-
+          buildozer-ndk-v11-${{ runner.os }}-
 
     # Step 7: Flush output staging zones
     - name: Prepare Build Directory
@@ -97,18 +97,14 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # FIXED: Uses a direct pipe to auto-accept all incoming licenses (including v37)
-    # when Buildozer runs its toolchain initialization pass.
+    # FIXED: Uses direct inline environment flags and forces python-for-android 
+    # to pass license acceptance checks directly to the build tools layer.
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
         
-        # Force-feed "y" to accept all Android licenses during initialization
-        echo "Accepting Android SDK licenses..."
-        yes | buildozer android licenses || true
-        
-        # Execute core compilation pass
-        buildozer -v android debug
+        # We append the direct accept-sdk-license hook straight into Buildozer's command arguments
+        buildozer -v android debug -- --accept-sdk-license
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
         BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
