@@ -79,6 +79,7 @@ jobs:
         pip install buildozer
 
     # Step 6: Isolated Caching Framework Matrix 
+    # Key bumped to v5 to discard any broken, partially empty SDK directory mappings
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -86,9 +87,9 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-v4-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v5-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v4-${{ runner.os }}-
+          buildozer-ndk-v5-${{ runner.os }}-
 
     # Step 7: Flush output staging zones
     - name: Prepare Build Directory
@@ -97,16 +98,10 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # CRITICAL FIX: Explicitly seeds verified SDK license hashes into the runner environment
-    # to unconditionally satisfy automated license acceptance checks for build-tools 33.0.1.
+    # Cleaned: Removes manual directory generation to let Buildozer fetch sdkmanager cleanly.
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
-        
-        # Manually construct directory mapping and push accepted hashes straight into the environment
-        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-        echo -e "8933bad161d74778b1ee986cb188ee2db4d98d41\n2c4dfa0b3664441b6145965a46856a62fc13662d\n4007548d45762d043d891a51139c2770d1316499\n65135a51a17f229dd563945b38914b1f486e6efa\n601085b94cd77f6b54b97d34a34334deb323205c\n2512d8e17a81208d3d7bc9c1b9d3311f42cd60f7\n854f3175c13e5bc0c9b1d9ed40ece595e3b97b1a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-        
         buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
@@ -147,8 +142,8 @@ jobs:
       with:
         name: Engine-Build-Logs
         path: |
-          ~/.buildozer/android/platform/build-*/build.log
-          ~/.buildozer/buildozer.log
+          ~/.buildozer
+          buildozer.log
         if-no-files-found: warn
         retention-days: 14
 
