@@ -20,14 +20,14 @@ jobs:
       with:
         fetch-depth: 1
 
-    # Step 2: Set Up Java Development Kit
+    # Step 2: Set Up Java Development Kit (Fixed: Cache scan disabled)
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    # Step 3: Set Up Python Platform Environment
+    # Step 3: Set Up Python Platform Environment (Fixed: Cache scan disabled)
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
       with:
@@ -67,7 +67,7 @@ jobs:
           ccache \
           gettext
 
-    # Step 5: Upgrade pip and install Python build tools
+    # Step 5: Upgrade pip and install Python build tools (Fixed: Pinned Cython version)
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
@@ -86,7 +86,7 @@ jobs:
         restore-keys: |
           buildozer-ndk-${{ runner.os }}-
 
-    # Step 7: Clean and prepare build (Wipes local and global build caches thoroughly)
+    # Step 7: Clean and prepare build (Fixed: Thoroughly wipes old corrupted toolchain states)
     - name: Prepare Build Directory
       run: |
         rm -rf bin dist .buildozer/
@@ -94,20 +94,22 @@ jobs:
         rm -rf ~/.buildozer/android/platform/python-for-android || true
         mkdir -p bin
 
-   # Step 8: Compile Application (Fixed: Wipe out ANDROID_NDK_ROOT)
+    # Step 8: Compile Application into Standalone APK (Fixed: Erased NDK variable bleedover & fixed libffi macros)
     - name: Compile Application Layout into Standalone APK
       run: |
+        # Fix libffi macro issues on modern Ubuntu runners
+        export ACLOCAL_PATH="/usr/share/aclocal"
+        
         buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
         BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
-        # WIPE ALL HOSTED ENVIRONMENT OVERRIDES COMPLETELY
+        # Explicitly scrub host runner system defaults
         ANDROID_NDK_HOME: ""
         ANDROID_NDK: ""
         ANDROID_NDK_ROOT: ""
         GRADLE_HOME: ""
       timeout-minutes: 120
-
 
     # Step 9: Verify APK was created
     - name: Verify APK Creation
