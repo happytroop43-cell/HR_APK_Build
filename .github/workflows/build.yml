@@ -16,7 +16,7 @@ jobs:
     - name: Install System Architecture Tool Chains
       run: |
         sudo apt update
-        sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config zlib1g-dev libncurses5-dev libssl-dev cmake libffi-dev libgdbm-dev bzip2 libsqlite3-dev python3-pip python3-setuptools python3-virtualenv
+        sudo apt install -y git zip unzip openjdk-17-jdk autoconf libtool pkg-config
 
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
@@ -30,10 +30,10 @@ jobs:
 
     - name: Compile Application Layout into Standalone APK
       run: |
-        buildozer -v android debug
+        yes y | buildozer -v android debug
 
     - name: Export Output Package Artifact
-      uses: actions/artifacts@v4
+      uses: actions/upload-artifact@v4
       with:
         name: Compiled-HR-System-APK
         path: bin/*.apk
