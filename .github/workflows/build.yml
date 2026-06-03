@@ -23,7 +23,7 @@ jobs:
       with:
         fetch-depth: 1
 
-    # Step 2: Establish Java Environment
+    # Step 2: Establish Java Environment (Required for Android toolchains)
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
@@ -70,15 +70,15 @@ jobs:
           ccache \
           gettext
 
-    # Step 5: Install Python packaging assets
+    # Step 5: Install Python packaging assets (Pinned for Kivy Recipe compliance)
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install --upgrade "cython<3.0.0" virtualenv
         pip install buildozer
 
-    # Step 6: Isolated Caching Framework Matrix
-    # Incremented to v8 to start completely clean without broken directories
+    # Step 6: Isolated Caching Framework Matrix 
+    # Cache key bumped to v9 to discard any broken, partially empty SDK directory states
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -86,9 +86,9 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-v8-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v9-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v8-${{ runner.os }}-
+          buildozer-ndk-v9-${{ runner.os }}-
 
     # Step 7: Flush output staging zones
     - name: Prepare Build Directory
@@ -97,34 +97,17 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # FIXED: Uses the pre-installed runner SDK path to auto-accept the license files
-    # and populates Buildozer's target directory before compilation begins.
+    # Cleaned: Uses standard runner paths to accept licenses without altering Buildozer's folder logic
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
         
-        # 1. Create Buildozer's expected internal license directory paths
-        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
-        
-        # 2. Accept all licenses using the runner's pre-installed Android SDK tools
+        # Accept baseline licenses on the runner machine's pre-installed SDK
         if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
-          echo "Accepting licenses via standard cmdline-tools..."
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-        elif [ -d "$ANDROID_HOME/tools/bin" ]; then
-          echo "Accepting licenses via legacy tools path..."
-          yes | $ANDROID_HOME/tools/bin/sdkmanager --licenses || true
         fi
         
-        # 3. Copy the accepted system license files directly into Buildozer's path
-        if [ -d "$ANDROID_HOME/licenses" ]; then
-          echo "Seeding licenses to Buildozer directory..."
-          cp -r $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/ || true
-        fi
-        
-        # 4. Fallback: Seed explicit known hash keys directly to prevent any missed checks
-        echo -e "8933bad161d74778b1ee986cb188ee2db4d98d41\n2c4dfa0b3664441b6145965a46856a62fc13662d\n4007548d45762d043d891a51139c2770d1316499\n65135a51a17f229dd563945b38914b1f486e6efa\n601085b94cd77f6b54b97d34a34334deb323205c\n2512d8e17a81208d3d7bc9c1b9d3311f42cd60f7\n854f3175c13e5bc0c9b1d9ed40ece595e3b97b1a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
-        
-        # 5. Run final build execution pass
+        # Execute buildozer to download and install its toolchain cleanly
         buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
