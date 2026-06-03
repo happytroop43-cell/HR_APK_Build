@@ -77,18 +77,18 @@ jobs:
         pip install --upgrade "cython<3.0.0" virtualenv
         pip install buildozer
 
-    # Step 6: Isolated Caching Framework Matrix
-    # Incremented cache key to v13 to completely clear out all broken manual directory states
+    # Step 6: Caching Framework Matrix
+    # Incremented cache key to v14 to map paths correctly
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
         path: |
-          ~/.buildozer
-          ~/.gradle
-          ~/.android
-        key: buildozer-ndk-v13-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          /home/runner/.buildozer
+          /home/runner/.gradle
+          /home/runner/.android
+        key: buildozer-ndk-v14-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v13-${{ runner.os }}-
+          buildozer-ndk-v14-${{ runner.os }}-
 
     # Step 7: Flush output staging zones
     - name: Prepare Build Directory
@@ -97,13 +97,15 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # FIXED: Uses a direct Unix pipeline to feed continuous "y" inputs directly 
-    # into the execution run, satisfying all hidden licensing steps instantly.
+    # FIXED: Forced working path via HOME export to stop Buildozer from saving assets under /root/
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
         
-        # We invoke standard Linux stream mechanics to auto-press "y" whenever asked
+        # Override the root home variable path context explicitly
+        export HOME=/home/runner
+        
+        # Execute build using continuous verification streaming input mechanics
         yes | buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
@@ -138,13 +140,14 @@ jobs:
         compression-level: 6
 
     # Step 11: Fail-Safe Retrieval Mode
+    # FIXED: Maps logs accurately from the /home/runner/ framework track
     - name: Upload Build Logs on Failure
       uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: Engine-Build-Logs
         path: |
-          ~/.buildozer
+          /home/runner/.buildozer
           buildozer.log
         if-no-files-found: warn
         retention-days: 14
