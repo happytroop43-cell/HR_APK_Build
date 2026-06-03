@@ -23,7 +23,7 @@ jobs:
       with:
         fetch-depth: 1
 
-    # Step 2: Establish Java Environment (Required for Android toolchains)
+    # Step 2: Establish Java Environment
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
@@ -70,15 +70,15 @@ jobs:
           ccache \
           gettext
 
-    # Step 5: Install Python packaging assets (Pinned for Kivy Recipe compliance)
+    # Step 5: Install Python packaging assets
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install --upgrade "cython<3.0.0" virtualenv
         pip install buildozer
 
-    # Step 6: Isolated Caching Framework Matrix 
-    # Cache key bumped to v9 to discard any broken, partially empty SDK directory states
+    # Step 6: Isolated Caching Framework Matrix
+    # Incremented to cache key v10 to clear out all half-baked toolchain folders
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -86,9 +86,9 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-v9-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v10-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v9-${{ runner.os }}-
+          buildozer-ndk-v10-${{ runner.os }}-
 
     # Step 7: Flush output staging zones
     - name: Prepare Build Directory
@@ -97,17 +97,17 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # Cleaned: Uses standard runner paths to accept licenses without altering Buildozer's folder logic
+    # FIXED: Uses a direct pipe to auto-accept all incoming licenses (including v37)
+    # when Buildozer runs its toolchain initialization pass.
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
         
-        # Accept baseline licenses on the runner machine's pre-installed SDK
-        if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-        fi
+        # Force-feed "y" to accept all Android licenses during initialization
+        echo "Accepting Android SDK licenses..."
+        yes | buildozer android licenses || true
         
-        # Execute buildozer to download and install its toolchain cleanly
+        # Execute core compilation pass
         buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
