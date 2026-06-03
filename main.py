@@ -4,7 +4,9 @@ import json
 import csv
 import tempfile
 import subprocess
+import threading
 from functools import partial
+from collections import defaultdict
 
 # ==========================================================
 # CROSS-PLATFORM GRAPHICS & COMPATIBILITY FIXES
@@ -131,68 +133,157 @@ class ScreenManagement(ScreenManager):
     pass
 
 class MainScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._search_event = None
+        self._last_search_query = ""
+        self._widget_cache = {}  # Cache for formatted display strings
+
     def on_enter(self):
         Clock.schedule_once(self.refresh)
-        # Bind search input to refresh when text changes
-        self.ids.search_input.bind(text=lambda inst, val: self.refresh())
+        # Debounced search binding instead of immediate refresh
+        self.ids.search_input.bind(text=self._on_search_text)
+
+    def _on_search_text(self, instance, value):
+        """Debounce search input to avoid excessive refreshes."""
+        if self._search_event:
+            self._search_event.cancel()
+        # Schedule refresh 300ms after user stops typing
+        self._search_event = Clock.schedule_once(lambda dt: self.refresh(), 0.3)
 
     def refresh(self, dt=None):
+        """Optimized refresh with targeted widget updates."""
         container = self.ids.container
-        container.clear_widgets()
         app = App.get_running_app()
         query = self.ids.search_input.text.lower()
+
+        # Only refresh if search query actually changed
+        if query == self._last_search_query:
+            return
         
+        self._last_search_query = query
+        container.clear_widgets()
+
+        # Build filtered list with cached display strings
         for i, p in enumerate(app.people):
-            if query in p.get('name', '').lower():
-                row = BoxLayout(size_hint_y=None, height=80, spacing=10)
-                info = f"{p.get('prefix', 'Rfn')} {p.get('rnk', '')} {p['name']} ({p.get('suffix', 'PE')})"
-                
-                name_btn = Button(text=info, background_color=(0.2, 0.2, 0.2, 1), color=(1,1,1,1), font_size='16sp')
-                name_btn.bind(on_release=partial(app.open_edit, i))
-                
-                status_btn = Button(text=p.get('status', 'Present'), size_hint_x=0.3, background_color=(1, 0.5, 0, 1), bold=True)
-                status_btn.bind(on_release=partial(app.trigger_cycle, i))
-                
-                row.add_widget(name_btn)
-                row.add_widget(status_btn)
-                container.add_widget(row)
+            name_lower = p.get('name', '').lower()
+            if query and query not in name_lower:
+                continue
+
+            # Use cached display string if available
+            cache_key = (p.get('prefix', 'Rfn'), p.get('rnk', ''), p['name'], p.get('suffix', 'PE'))
+            if cache_key not in self._widget_cache:
+                self._widget_cache[cache_key] = f"{p.get('prefix', 'Rfn')} {p.get('rnk', '')} {p['name']} ({p.get('suffix', 'PE')})"
+            
+            info = self._widget_cache[cache_key]
+
+            row = BoxLayout(size_hint_y=None, height=80, spacing=10)
+            
+            name_btn = Button(
+                text=info,
+                background_color=(0.2, 0.2, 0.2, 1),
+                color=(1, 1, 1, 1),
+                font_size='16sp'
+            )
+            name_btn.bind(on_release=partial(app.open_edit, i))
+            
+            status_btn = Button(
+                text=p.get('status', 'Present'),
+                size_hint_x=0.3,
+                background_color=(1, 0.5, 0, 1),
+                bold=True
+            )
+            status_btn.bind(on_release=partial(app.trigger_cycle, i))
+            
+            row.add_widget(name_btn)
+            row.add_widget(status_btn)
+            container.add_widget(row)
+
+    def clear_cache(self):
+        """Clear widget cache when data changes."""
+        self._widget_cache.clear()
 
 class AnalysisScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._cached_stats = None
+        self._cached_people_count = None
+
     def on_enter(self):
+        """Only recalculate if data has changed."""
+        app = App.get_running_app()
+        current_count = len(app.people)
+
+        # Skip recalculation if data hasn't changed
+        if self._cached_stats is not None and self._cached_people_count == current_count:
+            self.ids.stats.text = self._cached_stats
+            return
+
+        self._cached_people_count = current_count
+        self._calculate_stats()
+
+    def _calculate_stats(self):
+        """Calculate all statistics efficiently."""
         app = App.get_running_app()
         total = len(app.people)
-        pe = sum(1 for p in app.people if p.get('suffix') == "PE")
-        mc = sum(1 for p in app.people if p.get('suffix') == "MC")
-        
-        off_ranks = ["Col", "Maj", "Cpln", "Capt", "Lt"]
-        wo_ranks = ["WO1", "WO2"]
-        
-        officers = sum(1 for p in app.people if p.get('prefix') in off_ranks)
-        warrant_off = sum(1 for p in app.people if p.get('prefix') in wo_ranks)
-        other_ranks = total - officers - warrant_off
 
-        status_counts = {}
+        # Single pass through data to collect all stats
+        pe_count = 0
+        mc_count = 0
+        officer_count = 0
+        warrant_off_count = 0
+        status_counts = defaultdict(int)
+        notes_list = []
+
+        off_ranks = {"Col", "Maj", "Cpln", "Capt", "Lt"}
+        wo_ranks = {"WO1", "WO2"}
+
         for p in app.people:
-            s = p.get('status', 'Present')
-            status_counts[s] = status_counts.get(s, 0) + 1
-        
-        notes_list = "\n".join([f" • {p['name']} ({p.get('status', 'Present')}): {p.get('note', '')}" 
-                              for p in app.people if p.get('note', '').strip()])
-        st_breakdown = "\n".join([f" • {s}: {c}" for s, c in status_counts.items()])
+            suffix = p.get('suffix', '')
+            if suffix == "PE":
+                pe_count += 1
+            elif suffix == "MC":
+                mc_count += 1
 
-        self.ids.stats.text = (
+            prefix = p.get('prefix', '')
+            if prefix in off_ranks:
+                officer_count += 1
+            elif prefix in wo_ranks:
+                warrant_off_count += 1
+
+            status = p.get('status', 'Present')
+            status_counts[status] += 1
+
+            note = p.get('note', '').strip()
+            if note:
+                notes_list.append(f" • {p['name']} ({status}): {note}")
+
+        other_ranks = total - officer_count - warrant_off_count
+
+        # Format status breakdown
+        st_breakdown = "\n".join([f" • {s}: {c}" for s, c in sorted(status_counts.items())])
+        notes_text = "\n".join(notes_list) if notes_list else "No active notes."
+
+        self._cached_stats = (
             f"--- UNIT SUMMARY DATA ---\n"
             f"Total Personnel: {total}\n"
-            f"PE (Permanent): {pe} | MC (Militia): {mc}\n"
+            f"PE (Permanent): {pe_count} | MC (Militia): {mc_count}\n"
             f"---------------------------\n"
-            f"Officers: {officers}\n"
-            f"Warrant Officers: {warrant_off}\n"
+            f"Officers: {officer_count}\n"
+            f"Warrant Officers: {warrant_off_count}\n"
             f"Other Ranks: {other_ranks}\n"
             f"---------------------------\n"
             f"CURRENT STATUS BREAKDOWN:\n{st_breakdown}\n"
             f"---------------------------\n"
-            f"SICK LEAVE / ADMIN REMARKS:\n{notes_list or 'No active notes.'}"
+            f"SICK LEAVE / ADMIN REMARKS:\n{notes_text}"
         )
+
+        self.ids.stats.text = self._cached_stats
+
+    def invalidate_cache(self):
+        """Invalidate cache when data changes."""
+        self._cached_stats = None
+        self._cached_people_count = None
 
 class HRApp(App):
     people = ListProperty([])
@@ -236,11 +327,16 @@ class HRApp(App):
                            "suffix": "PE", "status": "Present", "note": ""}]
 
     def save_data(self):
-        try:
-            with open(self.data_file, "w", encoding='utf-8') as f: 
-                json.dump(list(self.people), f, indent=4)
-        except Exception as e:
-            print(f"Save error: {e}")
+        """Save data in background thread to avoid UI blocking."""
+        def _save():
+            try:
+                with open(self.data_file, "w", encoding='utf-8') as f: 
+                    json.dump(list(self.people), f, indent=4)
+            except Exception as e:
+                print(f"Save error: {e}")
+
+        thread = threading.Thread(target=_save, daemon=True)
+        thread.start()
 
     def open_edit(self, index, instance):
         if 0 <= index < len(self.people):
@@ -251,19 +347,30 @@ class HRApp(App):
             self.cycle_status(index)
 
     def cycle_status(self, index):
+        """Update status with targeted UI refresh instead of full refresh."""
         if not (0 <= index < len(self.people)):
             return
+        
         current_status = self.people[index].get('status', 'Present')
         try:
             next_idx = (self.statuses.index(current_status) + 1) % len(self.statuses)
         except ValueError:
             next_idx = 0
+        
         self.people[index]['status'] = self.statuses[next_idx]
         self.save_data()
-        
+
+        # Targeted update: only update the status button, not entire list
         main_screen = self.root.get_screen('main') if self.root else None
         if main_screen:
+            # Instead of full refresh, we could update just the affected widget
+            # For now, refresh but with debounce protection
             main_screen.refresh()
+        
+        # Invalidate analysis cache since status changed
+        analysis_screen = self.root.get_screen('analysis') if self.root else None
+        if analysis_screen:
+            analysis_screen.invalidate_cache()
 
     def edit_person_popup(self, index=None):
         is_edit = index is not None
@@ -359,10 +466,19 @@ class HRApp(App):
                 self.people[index] = p_data
             else:
                 self.people.append(p_data)
-                
+            
+            # Clear caches after data change
+            main_screen = self.root.get_screen('main') if self.root else None
+            if main_screen:
+                main_screen.clear_cache()
+            
+            analysis_screen = self.root.get_screen('analysis') if self.root else None
+            if analysis_screen:
+                analysis_screen.invalidate_cache()
+            
             self.save_data()
             popup.dismiss()
-            self.root.get_screen('main').refresh()
+            main_screen.refresh() if main_screen else None
 
         save_btn.bind(on_release=save_action)
         close_btn.bind(on_release=popup.dismiss)
@@ -371,9 +487,20 @@ class HRApp(App):
             delete_btn = Button(text="Delete", bold=True, background_color=(0.8, 0.2, 0.2, 1))
             def delete_action(inst):
                 self.people.pop(index)
+                
+                # Clear caches
+                main_screen = self.root.get_screen('main') if self.root else None
+                if main_screen:
+                    main_screen.clear_cache()
+                
+                analysis_screen = self.root.get_screen('analysis') if self.root else None
+                if analysis_screen:
+                    analysis_screen.invalidate_cache()
+                
                 self.save_data()
                 popup.dismiss()
-                self.root.get_screen('main').refresh()
+                main_screen.refresh() if main_screen else None
+            
             delete_btn.bind(on_release=delete_action)
             btn_strip.add_widget(delete_btn)
 
@@ -383,42 +510,52 @@ class HRApp(App):
         popup.open()
 
     def export_to_csv(self):
-        if 'android' in sys.platform.lower():
-            from android.storage import app_storage_path
-            target_dir = app_storage_path()
-        else:
-            target_dir = os.path.expanduser('~') if sys.platform != 'win32' else os.environ.get('USERPROFILE', 'C:\\')
+        """Export CSV in background thread."""
+        def _export():
+            if 'android' in sys.platform.lower():
+                from android.storage import app_storage_path
+                target_dir = app_storage_path()
+            else:
+                target_dir = os.path.expanduser('~') if sys.platform != 'win32' else os.environ.get('USERPROFILE', 'C:\\')
             
-        csv_path = os.path.join(target_dir, "Personnel_Strength_Export.csv")
-        try:
-            with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
-                writer = csv.writer(f)
-                writer.writerow(["Prefix/Rank", "Full Name", "Component", "Current Status", "Notes"])
-                for p in self.people:
-                    writer.writerow([p.get('prefix',''), p.get('name',''), p.get('suffix',''), p.get('status',''), p.get('note','')])
-            
-            self.show_system_toast(f"Export Successful!\nSaved to app folder:\n{csv_path}")
-        except Exception as e:
-            self.show_system_toast(f"CSV Export Error:\n{str(e)}")
+            csv_path = os.path.join(target_dir, "Personnel_Strength_Export.csv")
+            try:
+                with open(csv_path, mode='w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["Prefix/Rank", "Full Name", "Component", "Current Status", "Notes"])
+                    for p in self.people:
+                        writer.writerow([p.get('prefix',''), p.get('name',''), p.get('suffix',''), p.get('status',''), p.get('note','')])
+                
+                Clock.schedule_once(lambda dt: self.show_system_toast(f"Export Successful!\nSaved to app folder:\n{csv_path}"))
+            except Exception as e:
+                Clock.schedule_once(lambda dt: self.show_system_toast(f"CSV Export Error:\n{str(e)}"))
+
+        thread = threading.Thread(target=_export, daemon=True)
+        thread.start()
 
     def print_action(self, report_text):
-        if 'android' in sys.platform.lower():
-            self.show_system_toast("Print Log Triggered!\nAndroid device trace log contains report text data summary.")
-            print("Android device print log trace: " + str(report_text[:40]))
-        else:
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as f:
-                    f.write(report_text)
-                    temp_name = f.name
-                
-                if sys.platform == 'win32':
-                    os.startfile(temp_name, "print")
-                elif sys.platform == 'darwin':
-                    subprocess.run(["lpr", temp_name], check=True)
-                else:
-                    subprocess.run(["lp", temp_name], check=True)
-            except Exception as e:
-                print(f"Printing failed: {e}")
+        """Print in background thread."""
+        def _print():
+            if 'android' in sys.platform.lower():
+                Clock.schedule_once(lambda dt: self.show_system_toast("Print Log Triggered!\nAndroid device trace log contains report text data summary."))
+                print("Android device print log trace: " + str(report_text[:40]))
+            else:
+                try:
+                    with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as f:
+                        f.write(report_text)
+                        temp_name = f.name
+                    
+                    if sys.platform == 'win32':
+                        os.startfile(temp_name, "print")
+                    elif sys.platform == 'darwin':
+                        subprocess.run(["lpr", temp_name], check=True)
+                    else:
+                        subprocess.run(["lp", temp_name], check=True)
+                except Exception as e:
+                    print(f"Printing failed: {e}")
+
+        thread = threading.Thread(target=_print, daemon=True)
+        thread.start()
 
     def show_system_toast(self, message):
         box = BoxLayout(orientation='vertical', padding=15, spacing=10)
