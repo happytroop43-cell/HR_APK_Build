@@ -20,20 +20,18 @@ jobs:
       with:
         fetch-depth: 1
 
-    # Step 2: Set Up Java Development Kit (Fixed: Removed Gradle cache scanner)
+    # Step 2: Set Up Java Development Kit
     - name: Set Up Java Development Kit
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    # Step 3: Set Up Python Platform Environment (Fixed: Removed pip cache scanner)
+    # Step 3: Set Up Python Platform Environment
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        # Remove or comment out the line below:
-        # cache: 'pip' 
 
     # Step 4: Install Complete System Dependencies
     - name: Install Complete System Dependencies
@@ -73,7 +71,7 @@ jobs:
     - name: Install Python Build Tools
       run: |
         python -m pip install --upgrade pip setuptools wheel
-        pip install --upgrade cython virtualenv
+        pip install --upgrade "cython<3.0.0" virtualenv
         pip install buildozer
 
     # Step 6: Cache Buildozer & NDK to speed up subsequent builds
@@ -88,19 +86,23 @@ jobs:
         restore-keys: |
           buildozer-ndk-${{ runner.os }}-
 
-    # Step 7: Clean and prepare build (optional but recommended)
+    # Step 7: Clean and prepare build
     - name: Prepare Build Directory
       run: |
         rm -rf bin dist .buildozer/android/platform/build-* || true
         mkdir -p bin
 
-    # Step 8: Compile Application into Standalone APK
+    # Step 8: Compile Application (Fixed: Explicit environmental resets)
     - name: Compile Application Layout into Standalone APK
       run: |
-        yes | buildozer -v android debug 2>&1 | tee build_output.log
+        buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
         BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
+        # CRITICAL FIXES: Unset GitHub's pre-installed NDK and Gradle settings
+        ANDROID_NDK_HOME: ""
+        ANDROID_NDK: ""
+        GRADLE_HOME: ""
       timeout-minutes: 120
 
     # Step 9: Verify APK was created
@@ -134,7 +136,6 @@ jobs:
         name: Build-Logs
         path: |
           .buildozer/android/platform/build-*/build.log
-          build_output.log
         retention-days: 14
 
     # Step 12: Collect Debug Information on Failure
