@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Fixes the Node.js 20 deprecation warning logs across all runner stages
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -74,7 +78,7 @@ jobs:
         pip install --upgrade "cython<3.0.0" virtualenv
         pip install buildozer
 
-    # Step 6: Isolated Caching Matrix (Fixed: Key bumped to v3 to invalidate old corrupted libffi source blocks)
+    # Step 6: Isolated Caching Matrix (Fixed: Key bumped to v4 to drop old corrupted libffi/NDK states)
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -82,21 +86,19 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-v3-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v4-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v3-${{ runner.os }}-
+          buildozer-ndk-v4-${{ runner.os }}-
 
-    # Step 7: Clean workspace prep (Fixed: Aggressively deletes broken platform caches from previous attempts)
+    # Step 7: Clean workspace prep (Fixed: Streamlined to prevent wiping active cache mounts)
     - name: Prepare Build Directory
       run: |
-        rm -rf bin dist .buildozer/
-        rm -rf ~/.buildozer/android/platform/build-* || true
-        rm -rf ~/.buildozer/android/platform/python-for-android || true
+        rm -rf bin dist
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
     # Fixes:
-    # 1. Injects ACLOCAL_PATH to fix libffi macro error (LT_SYS_SYMBOL_USCORE) on Ubuntu 24.04 runner.
+    # 1. Injects ACLOCAL_PATH to fix libffi macro error (LT_SYS_SYMBOL_USCORE) on Ubuntu runners.
     # 2. Scrubs ANDROID_NDK system variables to stop the runner from forcing NDK 27.
     # 3. Drops masked pipeline tricks (| tee) so true errors surface natively.
     - name: Compile Application Layout into Standalone APK
@@ -135,14 +137,16 @@ jobs:
         retention-days: 7
         compression-level: 6
 
-    # Step 11: Fail-Safe Asset Retrieval (Triggers only if compilation hits a structural block)
+    # Step 11: Fail-Safe Asset Retrieval (Fixed: Target path configured directly to user home directory space)
     - name: Upload Build Logs on Failure
       uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: Build-Logs
         path: |
-          .buildozer/android/platform/build-*/build.log
+          ~/.buildozer/android/platform/build-*/build.log
+          ~/.buildozer/buildozer.log
+        if-no-files-found: warn
         retention-days: 14
 
     # Step 12: Collect Comprehensive Engine Diagnostics
@@ -158,7 +162,7 @@ jobs:
         echo "=== Cython Version ==="
         pip show cython
         echo "=== Build Directory Size ==="
-        du -sh .buildozer 2>/dev/null || echo "Build directory not found"
+        du -sh ~/.buildozer 2>/dev/null || echo "Build directory not found"
         echo "=== Available Disk Space ==="
         df -h
 
@@ -170,3 +174,4 @@ jobs:
         if [ "${{ job.status }}" = "success" ]; then
           echo "✓ APK build successful"
         fi
+        
