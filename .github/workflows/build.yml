@@ -19,9 +19,15 @@ jobs:
         sudo apt install -y \
           git zip unzip openjdk-17-jdk \
           autoconf libtool libtool-bin pkg-config \
+          m4 automake \
           libffi-dev libssl-dev zlib1g-dev \
           libjpeg-dev libpng-dev libfreetype6-dev \
           ccache build-essential python3-dev
+
+    - name: Fix Libtool Configuration
+      run: |
+        libtoolize --install --copy --force || true
+        aclocal
 
     - name: Set Up Python Platform Environment
       uses: actions/setup-python@v5
