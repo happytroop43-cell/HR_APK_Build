@@ -78,7 +78,7 @@ jobs:
         pip install buildozer
 
     # Step 6: Isolated Caching Framework Matrix
-    # Incremented cache key to v11 to completely discard any half-baked or broken SDK runs
+    # Cache version incremented to v12 to completely wipe out stuck, half-configured folders
     - name: Cache Buildozer & NDK
       uses: actions/cache@v4
       with:
@@ -86,9 +86,9 @@ jobs:
           ~/.buildozer
           ~/.gradle
           ~/.android
-        key: buildozer-ndk-v11-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+        key: buildozer-ndk-v12-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          buildozer-ndk-v11-${{ runner.os }}-
+          buildozer-ndk-v12-${{ runner.os }}-
 
     # Step 7: Flush output staging zones
     - name: Prepare Build Directory
@@ -97,14 +97,36 @@ jobs:
         mkdir -p bin
 
     # Step 8: Multi-Layer Toolchain Compilation Pass
-    # FIXED: Uses direct inline environment flags and forces python-for-android 
-    # to pass license acceptance checks directly to the build tools layer.
+    # FIXED: Manually bootstraps the command-line tools to accept licenses
+    # completely before Buildozer initializes.
     - name: Compile Application Layout into Standalone APK
       run: |
         export ACLOCAL_PATH="/usr/share/aclocal"
         
-        # We append the direct accept-sdk-license hook straight into Buildozer's command arguments
-        buildozer -v android debug -- --accept-sdk-license
+        # 1. Manually establish the precise file tree structure Buildozer targets
+        echo "Pre-allocating target SDK tool directories..."
+        mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools
+        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+        
+        # 2. Fetch official Android command-line tools directly to seed Buildozer's folder
+        echo "Downloading secure Android command-line binaries..."
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline_tools.zip
+        unzip -q cmdline_tools.zip -d /tmp/cmdline_tools_extracted
+        
+        # 3. Move them into Buildozer's structural layout
+        mv /tmp/cmdline_tools_extracted/cmdline-tools ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest
+        rm -f cmdline_tools.zip
+        
+        # 4. Use the local standalone manager binary to auto-accept all platform terms via Unix pipe
+        echo "Executing explicit license authorization pass..."
+        yes | ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=/home/runner/.buildozer/android/platform/android-sdk --licenses
+        
+        # 5. Create a secondary fallback verification layout to ensure aidl validation passes cleanly
+        echo -e "8933bad161d74778b1ee986cb188ee2db4d98d41\n2c4dfa0b3664441b6145965a46856a62fc13662d\n4007548d45762d043d891a51139c2770d1316499\n65135a51a17f229dd563945b38914b1f486e6efa\n601085b94cd77f6b54b97d34a34334deb323205c\n2512d8e17a81208d3d7bc9c1b9d3311f42cd60f7\n854f3175c13e5bc0c9b1d9ed40ece595e3b97b1a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+        
+        # 6. Execute core build command
+        echo "Starting Buildozer compilation engine pass..."
+        buildozer -v android debug
       env:
         BUILDOZER_ACCEPT_SDK_LICENSE: 1
         BUILDOZER_ALLOW_KIVY_USER_ROOT: 1
