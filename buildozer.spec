@@ -33,8 +33,10 @@ orientation = portrait
 # (bool) Indicate if the application should be fullscreen or not
 fullscreen = 1
 
-# (list) Permissions required by the app for CSV file exporting
-android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE
+# (list) Permissions required by the app
+# Network capability for engine updates; legacy storage permissions removed 
+# to comply with API 33 Scoped Storage guidelines.
+android.permissions = INTERNET
 
 # (int) Target Android API - MUST be at least 33 or 34 for NDK 25b compatibility
 android.api = 33
